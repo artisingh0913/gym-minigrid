@@ -304,17 +304,17 @@ class TestNode:
     def print(self):
         if self.yes:
             self.yes.print()
-        print(self.predicate, self.obj),
+        if self.nodeType == 0:
+            print(self.predicate, self.obj)
+        else:
+            print(self.expression, self.Q_val)
         if self.no:
             self.no.print()
-
-
 
 #
 # class LeafNode:
 #     def __index__(self):
 #
-
 
 args = parser.parse_args()
 
