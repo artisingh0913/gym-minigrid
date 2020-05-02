@@ -269,16 +269,20 @@ class Tree:
 class TestNode:
     def __init__(self, predicate, obj, n=0):
 
-        self.predicate = predicate
-        self.obj = obj
         self.nodeType = n #test, 1 -> #leaf
         self.parent = None
         self.yes = None
         self.no = None
 
-        ##for leaf nodes
-        self.expression = []
-        self.Q_val = list(0 for i in range(len(ACTION_TO_IDX)))
+        # for test nodes
+        if self.nodeType == 0:
+            self.predicate = predicate
+            self.obj = obj
+
+        # for leaf nodes
+        else:
+            self.expression = []
+            self.Q_val = list(0 for i in range(len(ACTION_TO_IDX)))
 
     def insert(self, side, val):
         # Compare the new value with the parent node
@@ -297,12 +301,14 @@ class TestNode:
                 self.no = TestNode("", "", 1)
                 self.yes.parent = self
 
-    def PrintTree(self):
+    def print(self):
         if self.yes:
-            self.yes.PrintTree()
+            self.yes.print()
         print(self.predicate, self.obj),
         if self.no:
-            self.no.PrintTree()
+            self.no.print()
+
+
 
 #
 # class LeafNode:
@@ -330,7 +336,7 @@ left = left.yes
 left.insert("yes", ["locked", "door"])
 left.insert("no", [])
 
-root.PrintTree()
+root.print()
 
 
 if args.agent_view:
