@@ -308,9 +308,9 @@ class TestNode:
 
     def print(self):     
         if self.nodeType == 0:
-            print("Test node ",self.nodeType, self.predicate, self.obj)
+            print("Test node ", self.predicate, self.obj)
         else:
-            print("Leaf Node ",self.nodeType, self.assertAction,self.expression, self.Q_val)
+            print("Leaf Node ", self.assertAction,self.expression, self.Q_val)
         if self.yes:
             self.yes.print()
         if self.no:
