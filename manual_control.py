@@ -40,7 +40,9 @@ def step(action):
 
     o = preprocess(o)
 
-    rdf(o)
+    state = rdf(o)
+    print("***********************input state*********************************** ",state)
+    root.traverse(state)
 
     # old code
 
@@ -186,6 +188,7 @@ def rdf(o):
 
     for s, p, o in state:
         print((s, p, o))
+    return state
 
 
 def key_handler(event):
@@ -267,7 +270,7 @@ class Tree:
 
 
 class TestNode:
-    def __init__(self, predicate, obj, n=0):
+    def __init__(self, predicate, obj,  n=0, assertAction=""):
 
         self.nodeType = n #test, 1 -> #leaf
         self.parent = None
@@ -278,13 +281,15 @@ class TestNode:
         if self.nodeType == 0:
             self.predicate = predicate
             self.obj = obj
+            
 
         # for leaf nodes
         else:
             self.expression = []
+            self.assertAction = assertAction
             self.Q_val = list(0 for i in range(len(ACTION_TO_IDX)))
 
-    def insert(self, side, val):
+    def insert(self, side, val,assertAction=""):
         # Compare the new value with the parent node
         if len(val) != 0:
             if side == "yes":
@@ -295,21 +300,40 @@ class TestNode:
                 self.no.parent = self
         else:
             if side == "yes":
-                self.yes = TestNode("", "", 1)
+                self.yes = TestNode("", "", 1, assertAction)
                 self.yes.parent = self
             else:
-                self.no = TestNode("", "", 1)
+                self.no = TestNode("", "", 1, assertAction)
                 self.yes.parent = self
 
-    def print(self):
+    def print(self):     
+        if self.nodeType == 0:
+            print("Test node ",self.nodeType, self.predicate, self.obj)
+        else:
+            print("Leaf Node ",self.nodeType, self.assertAction,self.expression, self.Q_val)
         if self.yes:
             self.yes.print()
-        if self.nodeType == 0:
-            print(self.predicate, self.obj)
-        else:
-            print(self.expression, self.Q_val)
         if self.no:
             self.no.print()
+
+    def traverse(self,predList):
+        if self.nodeType == 1:
+            print("LEAF NODE FOUND ",self.assertAction)
+            return self
+        predFound  = 0
+        for s, p, o in predList:
+            if self.predicate == p and self.obj == o:
+                if self.yes:
+                    self.yes.traverse(predList)
+                predFound = 1
+                break;
+                
+        if predFound == 0:
+            if self.no:
+                self.no.traverse(predList)
+       
+    
+            
 
 #
 # class LeafNode:
@@ -320,23 +344,22 @@ args = parser.parse_args()
 
 env = gym.make(args.env)
 
-# decisionTree = Tree()
+
 root = TestNode("visible", "key")
 root.insert("yes", ["carrying", "key"])
-root.insert("no", [])
+root.insert("no", [],"Find The Key")
 left = root.yes
-# right = root.no
 
 left.insert("yes", ["visible", "door"])
-left.insert("no", [])
+left.insert("no", [], "Pick Up The Key")
 
 left = left.yes
-#right
 
 left.insert("yes", ["locked", "door"])
-left.insert("no", [])
+left.insert("no", [],"Find the door")
 
 root.print()
+
 
 
 if args.agent_view:
