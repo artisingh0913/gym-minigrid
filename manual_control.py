@@ -5,6 +5,7 @@ import argparse
 import numpy as np
 import gym
 import gym_minigrid
+import random
 from gym_minigrid.wrappers import *
 from gym_minigrid.window import Window
 
@@ -28,8 +29,74 @@ def reset():
 
     redraw(obs)
 
+ACTION_IDX = {
+    'left' : 0,
+    'right' : 1,
+    'forward' : 2,
+    'pickup' : 3,
+    'drop' : 4,
+    'toggle' : 5,
+    'enter' : 6
+}
 
 def step(action):
+    obs, reward, done, info = env.step(action)
+    print('step=%s, reward=%.2f' % (env.step_count, reward))
+
+    # new code
+    o = obs["image"]
+    o = o.transpose()
+    # print(o)
+    o = preprocess(o)
+
+    input_state = rdf(o)
+
+    print("***********************input state*********************************** ")
+    print(input_state)
+    leaf_state = []
+    root.reward = reward
+    state_node = root.traverse(input_state, leaf_state)
+    print("Action Taken: ", state_node.assertAction)
+    # if action is None:
+    #     action = random.randint(0, len(ACTION_TO_IDX) - 1)
+
+    action = state_node.assertAction
+
+    while not done:
+        # key_handler.key = action
+        redraw(obs)
+
+        obs, reward, done, info = env.step(ACTION_IDX[action])
+        print('step=%s, reward=%.2f' % (env.step_count, reward))
+
+        o = obs["image"]
+        o = o.transpose()
+        # print(o)
+        o = preprocess(o)
+        input_state = rdf(o)
+        print(input_state)
+        leaf_state = []
+        root.reward = reward
+        state_node = root.traverse(input_state, leaf_state)
+        print("Action Taken: ", state_node.assertAction)
+        action = state_node.assertAction
+        # if action is None:
+        #     action = random.randint(0, len(ACTION_TO_IDX)-1)
+
+        if done:
+            print("done")
+            break;
+
+    # old code
+
+    if done:
+        print('done!')
+        reset()
+    else:
+        redraw(obs)
+
+def step_next(action):
+
     obs, reward, done, info = env.step(action)
     print('step=%s, reward=%.2f' % (env.step_count, reward))
 
@@ -40,18 +107,13 @@ def step(action):
 
     o = preprocess(o)
 
-    state = rdf(o)
-    print("***********************input state*********************************** ",state)
-    root.traverse(state)
+    input_state = rdf(o)
 
-    # old code
-
-    if done:
-        print('done!')
-        reset()
-    else:
-        redraw(obs)
-
+    print("***********************input state*********************************** ")
+    print(input_state)
+    leaf_state = []
+    root.reward = reward
+    root.traverse(input_state, leaf_state)
 
 # Map of object type to integers old
 OBJECT_TO_IDX_OLD = {
@@ -75,41 +137,6 @@ OBJECT_TO_IDX_NEW = {
     'door': 2,
     'goal': 3
 }
-
-
-# class TreeNode:
-#     def __init__(self, data, old_state):
-#         # data represents the feature upon which the node was split when fitting the training data
-#         # data = None for leaf node
-#         self.data = data
-#         # children of a node are stored as a dicticionary with key being the value of feature upon which the node was split
-#         # and the corresponding value stores the child TreeNode
-#         self.children = {}
-#         # output represents the old_state at this instance of the decision tree
-#         self.output = old_state
-#         # index will be used to assign a unique index to each node
-#         self.index = -1
-
-#     def add_child(self, feature_value, obj):
-#         self.children[feature_value] = obj
-
-#     def find_split(self):
-#         for c in range(self.col_count):
-#             self.find_better_split(c)
-#         if self.is_leaf: return
-#         x = self.split_col
-#         lhs = np.nonzero(x <= self.split)[0]
-#         rhs = np.nonzero(x > self.split)[0]
-#         self.lhs = Node(self.x, self.y, self.idxs[lhs], self.min_leaf)
-#         self.rhs = Node(self.x, self.y, self.idxs[rhs], self.min_leaf)
-
-# class DecisionTree:
-#     def __init__(self):
-#         # root represents the root node of the decision tree built after fitting the training data
-#         self.__root = None
-
-#     def __decision_tree
-#     OBJECT_TO_IDX_OLD
 
 def preprocess(old_state):
     dim = len(OBJECT_TO_IDX_NEW)
@@ -227,16 +254,159 @@ def key_handler(event):
         step(env.actions.done)
         return
 
-
 ACTION_TO_IDX = {
-    'left': 0,
-    'right': 1,
-    'forward': 2,
-    'toggle': 3,
-    'pickup': 4,
-    'drop': 5,
-    'enter': 6
+    0 : 'left',
+    1 : 'right',
+    2 : 'forward',
+    3 : 'pickup',
+    4 : 'drop',
+    5 : 'toggle',
+    6 : 'enter'
 }
+
+
+class Tree:
+    def __init__(self):
+        self.__root = None
+
+
+class TreeNode:
+    def __init__(self, predicate, obj, n=0, assertAction=""):
+
+        self.nodeType = n  ##  test, 1 -> #leaf
+        self.parent = None
+        self.yes = None
+        self.no = None
+        self.reward = 0
+        self.learning_rate = 0.1
+        self.discount_fact = 0.1
+        self.last_state = []
+        self.assertactn = " "
+
+        # for test nodes
+        if self.nodeType == 0:
+            self.predicate = predicate
+            self.obj = obj
+
+        # for leaf nodes
+        else:
+            self.expression = []
+            self.assertAction = assertAction
+            self.Q_val = 0
+            self.Q_val_list = list(0 for i in range(len(ACTION_TO_IDX)))
+
+    def insert(self, side, val, assertAction=" "):
+        # Compare the new value with the parent node
+        if len(val) != 0:
+            if side == "yes":
+                self.yes = TreeNode(val[0], val[1])
+                self.yes.parent = self
+            else:
+                self.no = TreeNode(val[0], val[1])
+                self.no.parent = self
+        else:
+            if side == "yes":
+                self.yes = TreeNode("", "", 1, assertAction)
+                self.yes.parent = self
+            else:
+                self.no = TreeNode("", "", 1, assertAction)
+                self.yes.parent = self
+
+    def print(self):
+        if self.nodeType == 0:
+            print("Test node ", self.predicate, self.obj)
+        else:
+            print("Leaf Node ", self.assertAction, self.expression, self.Q_val)
+        if self.yes:
+            self.yes.print()
+        if self.no:
+            self.no.print()
+
+    def get_action(self):
+        if self.assertAction == " ":
+            # select random action
+            action = random.randint(0, len(ACTION_TO_IDX)-1)
+            self.assertAction = ACTION_TO_IDX[action]
+            # self.assertactn = self.assertAction
+        else:
+            # do an q-update
+            # 1. get max of Q_val from possible states with each action
+            # let's default that with some value now
+            max_val = 0.1
+            # TODO --> calculate the 'estimate of optimal future value'
+            '''QUESTION  (TODO) ---> is the understanding correct for the calculation?
+            Are we going to do a test here to take which predicate to split and create 'yes'
+            and 'no' child to get their Q-val and see if there are any changes in the Q-val-vec of child.
+            If parent/child Q_val-vec remains same, we don't split, 
+            otherwise we split the node, and get the MAX Q-val for future val from the child nodes.
+            '''
+
+            for i in range(len(self.Q_val_list)):
+                self.Q_val_list[i] = self.Q_val_list[i] + self.learning_rate * (
+                    self.reward + self.discount_fact * max_val - self.Q_val_list[i]
+                )
+            action = self.Q_val_list.index(max(self.Q_val_list))
+            self.Q_val = self.Q_val_list[action]
+            self.assertAction = ACTION_TO_IDX[action]
+            # self.assertactn = self.assertAction
+
+
+    def traverse(self, predList, state_exp):
+        if self.nodeType == 1:
+            self.expression = state_exp
+            print("LEAF NODE FOUND, @ State ", self.expression)
+            self.get_action()
+            print("Best Q-Value State Action Pair: ", self.Q_val, self.assertAction)
+            return self
+        predFound = 0
+        # state_exp = []
+        for s, p, o in predList:
+            if self.predicate == p and self.obj == o:
+                if self.yes:
+                    state_exp.append([s, p, o])
+                    node = self.yes.traverse(predList, state_exp)
+                predFound = 1
+                # print([s, p, o])
+                break;
+
+        if predFound == 0:
+            if self.no:
+                # state_exp.append([s, p, o])
+                node = self.no.traverse(predList, state_exp)
+
+        return node
+
+def create_tree():
+    root_node = TreeNode("visible", "key")
+    root_node.insert("yes", ["carrying", "key"])
+    root_node.insert("no", [], " ")
+    left = root_node.yes
+
+    left.insert("yes", ["visible", "door"])
+    left.insert("no", [], " ")
+
+    left = left.yes
+
+    left.insert("yes", ["locked", "door"])
+    left.insert("no", [], " ")
+
+    left = left.yes
+
+    left.insert("yes", [], " ")
+    left.insert("no", ["visible", "door"])
+
+    right = left.no
+
+    right.insert("yes", ["visible", "goal"])
+    right.insert("no", [], " ")
+
+    left = right.yes
+
+    left.insert("yes", [], " ")
+    left.insert("no", [], " ")
+
+    root_node.print()
+    return root_node
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -263,103 +433,11 @@ parser.add_argument(
     action='store_true'
 )
 
-
-class Tree:
-    def __init__(self):
-        self.__root = None
-
-
-class TestNode:
-    def __init__(self, predicate, obj,  n=0, assertAction=""):
-
-        self.nodeType = n #test, 1 -> #leaf
-        self.parent = None
-        self.yes = None
-        self.no = None
-
-        # for test nodes
-        if self.nodeType == 0:
-            self.predicate = predicate
-            self.obj = obj
-            
-
-        # for leaf nodes
-        else:
-            self.expression = []
-            self.assertAction = assertAction
-            self.Q_val = list(0 for i in range(len(ACTION_TO_IDX)))
-
-    def insert(self, side, val,assertAction=""):
-        # Compare the new value with the parent node
-        if len(val) != 0:
-            if side == "yes":
-                self.yes = TestNode(val[0], val[1])
-                self.yes.parent = self
-            else:
-                self.no = TestNode(val[0], val[1])
-                self.no.parent = self
-        else:
-            if side == "yes":
-                self.yes = TestNode("", "", 1, assertAction)
-                self.yes.parent = self
-            else:
-                self.no = TestNode("", "", 1, assertAction)
-                self.yes.parent = self
-
-    def print(self):     
-        if self.nodeType == 0:
-            print("Test node ", self.predicate, self.obj)
-        else:
-            print("Leaf Node ", self.assertAction,self.expression, self.Q_val)
-        if self.yes:
-            self.yes.print()
-        if self.no:
-            self.no.print()
-
-    def traverse(self,predList):
-        if self.nodeType == 1:
-            print("LEAF NODE FOUND ",self.assertAction)
-            return self
-        predFound  = 0
-        for s, p, o in predList:
-            if self.predicate == p and self.obj == o:
-                if self.yes:
-                    self.yes.traverse(predList)
-                predFound = 1
-                break;
-                
-        if predFound == 0:
-            if self.no:
-                self.no.traverse(predList)
-       
-    
-            
-
-#
-# class LeafNode:
-#     def __index__(self):
-#
-
 args = parser.parse_args()
 
 env = gym.make(args.env)
 
-
-root = TestNode("visible", "key")
-root.insert("yes", ["carrying", "key"])
-root.insert("no", [],"Find The Key")
-left = root.yes
-
-left.insert("yes", ["visible", "door"])
-left.insert("no", [], "Pick Up The Key")
-
-left = left.yes
-
-left.insert("yes", ["locked", "door"])
-left.insert("no", [],"Find the door")
-
-root.print()
-
+root = create_tree()
 
 
 if args.agent_view:

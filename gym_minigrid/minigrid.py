@@ -1143,6 +1143,11 @@ class MiniGridEnv(gym.Env):
         if self.step_count >= self.max_steps:
             done = True
 
+        if not done:
+            reward = 1.0
+        # else:
+        #     reward =
+
         obs = self.gen_obs()
 
         return obs, reward, done, {}
