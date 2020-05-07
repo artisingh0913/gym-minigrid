@@ -3,19 +3,19 @@
 import time
 import argparse
 import numpy as np
+from collections import deque
 import gym
 import gym_minigrid
+# from scores.score_logger import ScoreLogger
 import random
 from gym_minigrid.wrappers import *
 from gym_minigrid.window import Window
-
 
 def redraw(img):
     if not args.agent_view:
         img = env.render('rgb_array', tile_size=args.tile_size)
 
     window.show_img(img)
-
 
 def reset():
     if args.seed != -1:
@@ -40,6 +40,8 @@ ACTION_IDX = {
 }
 
 def step(action):
+
+    step = 0
     obs, reward, done, info = env.step(action)
     print('step=%s, reward=%.2f' % (env.step_count, reward))
 
@@ -53,33 +55,67 @@ def step(action):
 
     print("***********************input state*********************************** ")
     print(input_state)
+    input_rdf = {}
+    for s, p, o in input_state:
+        if p in list(input_rdf.keys()):
+            input_rdf[p].append(o)
+        else:
+            # l = [[s, o]]
+            input_rdf[p] = [o]
+    print(input_rdf)
     leaf_state = []
-    root.reward = reward
-    state_node = root.traverse(input_state, leaf_state)
-    print("Action Taken: ", state_node.assertAction)
-    # if action is None:
-    #     action = random.randint(0, len(ACTION_TO_IDX) - 1)
+    dTree.root.reward = reward
 
-    action = state_node.assertAction
+    state = dTree.root.traverse(input_rdf, leaf_state)
+
+    # action = state_node.assertAction
 
     while not done:
         # key_handler.key = action
         redraw(obs)
 
-        obs, reward, done, info = env.step(ACTION_IDX[action])
+        step += 1
+
+        # get the action at current state
+        print("Action to Take: ", state.assertAction)
+        action = state.assertAction
+
+        #get the next state
+
+        obs_next, reward, done, info = env.step(ACTION_IDX[action])
         print('step=%s, reward=%.2f' % (env.step_count, reward))
 
-        o = obs["image"]
+        reward = reward if not done else -reward
+
+        o = obs_next["image"]
         o = o.transpose()
-        # print(o)
         o = preprocess(o)
         input_state = rdf(o)
         print(input_state)
-        leaf_state = []
-        root.reward = reward
-        state_node = root.traverse(input_state, leaf_state)
-        print("Action Taken: ", state_node.assertAction)
-        action = state_node.assertAction
+
+        input_rdf = {}
+        for s, p, o in input_state:
+            if p in list(input_rdf.keys()):
+                input_rdf[p].append(o)
+            else:
+                # l = [[s, o]]
+                input_rdf[p] = [o]
+        print(input_rdf)
+
+        leaf_state = []         # default
+        state.reward = reward
+        # next_state = dTree.root.traverse(input_state, leaf_state)
+        next_state = dTree.root.traverse(input_rdf, leaf_state)
+        # print("Before Q-update: ", next_state.assertAction)
+        #
+        if (step % 300) == 0:
+            dTree.randFlag = True
+        dTree.remember(state, ACTION_IDX[action], reward, next_state, done)
+
+        state = next_state
+        obs = obs_next
+
+        # action = state_node.assertAction
         # if action is None:
         #     action = random.randint(0, len(ACTION_TO_IDX)-1)
 
@@ -94,26 +130,6 @@ def step(action):
         reset()
     else:
         redraw(obs)
-
-def step_next(action):
-
-    obs, reward, done, info = env.step(action)
-    print('step=%s, reward=%.2f' % (env.step_count, reward))
-
-    # new code
-    o = obs["image"]
-    o = o.transpose()
-    print(o)
-
-    o = preprocess(o)
-
-    input_state = rdf(o)
-
-    print("***********************input state*********************************** ")
-    print(input_state)
-    leaf_state = []
-    root.reward = reward
-    root.traverse(input_state, leaf_state)
 
 # Map of object type to integers old
 OBJECT_TO_IDX_OLD = {
@@ -158,8 +174,8 @@ def preprocess(old_state):
         old_index = OBJECT_TO_IDX_OLD[key]
         new_index = OBJECT_TO_IDX_NEW[key]
         found = np.where(old_state[0] == old_index)
-        print("agent ", old_state[0][6][3])
-        print("key ", old_index)
+        # print("agent ", old_state[0][6][3])
+        # print("key ", old_index)
 
         if (found[0].size > 0):
             visible[0][new_index] = 1
@@ -180,7 +196,7 @@ def preprocess(old_state):
 
     obs[2] = locked
 
-    print(obs)
+    # print(obs)
 
     return obs
 
@@ -199,7 +215,7 @@ def rdf(o):
     key_list = list(OBJECT_TO_IDX_NEW.keys())
     val_list = list(OBJECT_TO_IDX_NEW.values())
 
-    print(locked)
+    # print(locked)
 
     for b in objects_visible[0]:
         object = key_list[val_list[b]]
@@ -213,8 +229,8 @@ def rdf(o):
         object = key_list[val_list[b]]
         state.append(("agent", "locked", object))
 
-    for s, p, o in state:
-        print((s, p, o))
+    # for s, p, o in state:
+        # print((s, p, o))
     return state
 
 
@@ -264,11 +280,31 @@ ACTION_TO_IDX = {
     6 : 'enter'
 }
 
+DISCOUNT_FACTOR = 0.3
+LEARNING_RATE = 0.001
+
+MEMORY_SIZE = 1000
+BATCH_SIZE = 20
+
+ROOT_FLAG = False
 
 class Tree:
     def __init__(self):
-        self.__root = None
+        self.root = None
+        # self.old_state = None   #store the leafnode
+        self.memory = deque(maxlen=MEMORY_SIZE)
+        self.isFit = False
+        self.randFlag = False
+        self.cnt = 0
 
+    def remember(self, state, action, reward, next_state, done):
+        self.memory.append((state, action, reward, next_state, done))
+        state.q_update(next_state, action, self.randFlag)
+        if self.randFlag and self.cnt < 50:
+            self.randFlag = False
+            self.cnt = 0
+        elif self.randFlag:
+            self.cnt += 1
 
 class TreeNode:
     def __init__(self, predicate, obj, n=0, assertAction=""):
@@ -278,8 +314,8 @@ class TreeNode:
         self.yes = None
         self.no = None
         self.reward = 0
-        self.learning_rate = 0.1
-        self.discount_fact = 0.1
+        self.learning_rate = LEARNING_RATE
+        self.discount_fact = DISCOUNT_FACTOR
         self.last_state = []
         self.assertactn = " "
 
@@ -292,8 +328,9 @@ class TreeNode:
         else:
             self.expression = []
             self.assertAction = assertAction
-            self.Q_val = 0
-            self.Q_val_list = list(0 for i in range(len(ACTION_TO_IDX)))
+            self.Q_val = 50
+            # TODo
+            self.Q_val_list = list(50 for i in range(len(ACTION_TO_IDX)))
 
     def insert(self, side, val, assertAction=" "):
         # Compare the new value with the parent node
@@ -322,24 +359,55 @@ class TreeNode:
         if self.no:
             self.no.print()
 
+    def q_update(self, next_state, action, flag):
+        print("-------Inside Q-update function--------")
+        # print("Old State: ", self.expression, " Q-val: ", self.Q_val_list)
+        # print("Action : ", ACTION_TO_IDX[action])
+        # print("Next State: ", next_state.expression, "Q-val: ", next_state.Q_val_list)
+
+        if flag:
+            action = random.randint(0, len(ACTION_TO_IDX) - 1)
+            self.assertAction = ACTION_TO_IDX[action]
+            return
+
+        # TODO --> calculate the 'estimate of optimal future value'
+        #     q_update = reward
+        self.Q_val_list[action] = self.Q_val_list[action] + self.learning_rate * (
+            self.reward + self.discount_fact * max(next_state.Q_val_list) - self.Q_val_list[action]
+        )
+        m = max(self.Q_val_list)
+        l = [i for i, j in enumerate(self.Q_val_list) if j == m]
+        print("set of max value action : ", l)
+        # action = self.Q_val_list.index(max(self.Q_val_list))
+        if len(l) > 1:
+            action = random.choice(l)
+        else:
+            action = l[0]
+
+        self.Q_val = self.Q_val_list[action]
+        self.assertAction = ACTION_TO_IDX[action]
+
     def get_action(self):
+        # todo normalize the q-val, and randomize at periodic time
         if self.assertAction == " ":
             # select random action
             action = random.randint(0, len(ACTION_TO_IDX)-1)
             self.assertAction = ACTION_TO_IDX[action]
             # self.assertactn = self.assertAction
-        else:
+
+        ''' ------------------------------- temp comment added code to q-update fnction ------------    
+        else:            
+            # past,
             # do an q-update
             # 1. get max of Q_val from possible states with each action
             # let's default that with some value now
             max_val = 0.1
             # TODO --> calculate the 'estimate of optimal future value'
-            '''QUESTION  (TODO) ---> is the understanding correct for the calculation?
-            Are we going to do a test here to take which predicate to split and create 'yes'
-            and 'no' child to get their Q-val and see if there are any changes in the Q-val-vec of child.
-            If parent/child Q_val-vec remains same, we don't split, 
-            otherwise we split the node, and get the MAX Q-val for future val from the child nodes.
-            '''
+            # QUESTION  (TODO) ---> is the understanding correct for the calculation?
+            # Are we going to do a test here to take which predicate to split and create 'yes'
+            # and 'no' child to get their Q-val and see if there are any changes in the Q-val-vec of child.
+            # If parent/child Q_val-vec remains same, we don't split, 
+            # otherwise we split the node, and get the MAX Q-val for future val from the child nodes.
 
             for i in range(len(self.Q_val_list)):
                 self.Q_val_list[i] = self.Q_val_list[i] + self.learning_rate * (
@@ -349,38 +417,60 @@ class TreeNode:
             self.Q_val = self.Q_val_list[action]
             self.assertAction = ACTION_TO_IDX[action]
             # self.assertactn = self.assertAction
-
+        '''
 
     def traverse(self, predList, state_exp):
         if self.nodeType == 1:
             self.expression = state_exp
             print("LEAF NODE FOUND, @ State ", self.expression)
             self.get_action()
-            print("Best Q-Value State Action Pair: ", self.Q_val, self.assertAction)
+            print("Q-Value State Action Pair: ", self.Q_val, self.assertAction)
             return self
-        predFound = 0
-        # state_exp = []
-        for s, p, o in predList:
-            if self.predicate == p and self.obj == o:
-                if self.yes:
-                    state_exp.append([s, p, o])
-                    node = self.yes.traverse(predList, state_exp)
-                predFound = 1
-                # print([s, p, o])
-                break;
 
-        if predFound == 0:
-            if self.no:
-                # state_exp.append([s, p, o])
+        # predFound = 0
+        # state_exp = []
+        #
+        # for s, p, o in predList:
+        #     if self.predicate == p and self.obj == o:
+        #         if self.yes:
+        #             state_exp.append([s, p, o])
+        #             node = self.yes.traverse(predList, state_exp)
+        #         predFound = 1
+        #         # print([s, p, o])
+        #         break;
+        #
+        # if predFound == 0:
+        #     if self.no:
+        #         # state_exp.append([s, p, o])
+        #         node = self.no.traverse(predList, state_exp)
+
+        if self.predicate in predList.keys():
+            if self.obj in predList[self.predicate]:
+                p = self.predicate
+                for i in range(len(predList[p])):
+                    if predList[p][i] == self.obj:
+                        o = predList[p][i]
+                if self.yes:
+                    state_exp.append([p, o])
+                    node = self.yes.traverse(predList, state_exp)
+            else:
+                if self.no:
+                    node = self.no.traverse(predList, state_exp)
+        else:
+            if self.yes:
+                node = self.yes.traverse(predList, state_exp)
+            else:
                 node = self.no.traverse(predList, state_exp)
 
         return node
 
 def create_tree():
-    root_node = TreeNode("visible", "key")
-    root_node.insert("yes", ["carrying", "key"])
-    root_node.insert("no", [], " ")
-    left = root_node.yes
+    dtree = Tree()
+    dtree.root = TreeNode("visible", "key")
+    # root_node = TreeNode("visible", "key")
+    dtree.root.insert("yes", ["carrying", "key"])
+    dtree.root.insert("no", [], " ")
+    left = dtree.root.yes
 
     left.insert("yes", ["visible", "door"])
     left.insert("no", [], " ")
@@ -405,8 +495,10 @@ def create_tree():
     left.insert("yes", [], " ")
     left.insert("no", [], " ")
 
-    root_node.print()
-    return root_node
+    # root_node.print()
+    dtree.root.print()
+    # return root_node
+    return dtree
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -437,8 +529,7 @@ args = parser.parse_args()
 
 env = gym.make(args.env)
 
-root = create_tree()
-
+dTree = create_tree()
 
 if args.agent_view:
     env = RGBImgPartialObsWrapper(env)
