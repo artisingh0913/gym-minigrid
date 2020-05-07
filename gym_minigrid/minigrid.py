@@ -1084,7 +1084,7 @@ class MiniGridEnv(gym.Env):
     def step(self, action):
         self.step_count += 1
 
-        reward = 0
+        reward = 1
         done = False
 
         # Get the position in front of the agent
@@ -1140,8 +1140,18 @@ class MiniGridEnv(gym.Env):
         else:
             assert False, "unknown action"
 
-        if self.step_count >= self.max_steps:
-            done = True
+        # if self.step_count >= self.max_steps:
+        #     done = True
+        #
+        # if not done:
+        #     reward = 1.0
+        # TODO ---> '''
+        #  1. negative reward per action (same const val for each action),
+        #  2. setting 0 reward
+        #  3. q-val to have some +ve val '''
+
+        # else:
+        #     reward =
 
         obs = self.gen_obs()
 
